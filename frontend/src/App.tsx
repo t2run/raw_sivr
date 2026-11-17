@@ -6,7 +6,7 @@ import logo from "./assets/logo.png";
 import ImportDialog from "./ImportDialog";
 import SettingsDialog from "./SettingsDialog";
 import VideoPlayer from "./VideoPlayer";
-import ZoomImage, { Zoom } from "./ZoomImage";
+import ZoomImage, { stepZoom, Zoom, ZOOM_STEP } from "./ZoomImage";
 
 type Filter = "all" | "unmarked" | "pick" | "reject";
 
@@ -69,7 +69,13 @@ export default function App() {
   const grid = useRef<HTMLDivElement>(null);
   const strip = useRef<HTMLDivElement>(null);
   const togglePlay = useRef<() => void>(() => {});
-  const [zoom, setZoom] = useState<Zoom>({ on: false, u: 0.5, v: 0.5 });
+  const [zoom, setZoom] = useState<Zoom>({ on: false, u: 0.5, v: 0.5, scale: 1 });
+  // Fit scale of the selected photo, used by the +/- keys.
+  const fitScale = useRef(1);
+  const onFit = useCallback((f: number) => {
+    fitScale.current = f;
+  }, []);
+  const toggleZoom = () => setZoom((z) => (z.on ? { ...z, on: false } : { ...z, on: true, scale: 1 }));
   const [compare, setCompare] = useState(1); // photos side by side in the single view
   const [showInfo, setShowInfo] = useState(true);
   const [info, setInfo] = useState<PhotoInfo | null>(null);
@@ -237,7 +243,14 @@ export default function App() {
           mark("");
           break;
         case "zoom":
-          if (single) setZoom((z) => ({ ...z, on: !z.on }));
+          if (single) toggleZoom();
+          break;
+        case "+":
+        case "=":
+          if (single) setZoom((z) => stepZoom(z, ZOOM_STEP, fitScale.current));
+          break;
+        case "-":
+          if (single) setZoom((z) => stepZoom(z, 1 / ZOOM_STEP, fitScale.current));
           break;
         case "keepBest":
           keepBest();
@@ -461,7 +474,7 @@ export default function App() {
                       {it.kind === "video" ? (
                         <img src={it.thumb} className="h-full w-full object-contain" draggable={false} />
                       ) : (
-                        <ZoomImage src={it.full} zoom={zoom} onZoom={setZoom} />
+                        <ZoomImage src={it.full} zoom={zoom} onZoom={setZoom} onFit={start + k === sel ? onFit : undefined} />
                       )}
                     </div>
                   </div>
@@ -470,7 +483,7 @@ export default function App() {
             ) : current.kind === "video" ? (
               <VideoPlayer item={current} hasMpv={folder.hasMpv} suspended={dialogOpen} originalKey={keys.original} toggleRef={togglePlay} />
             ) : (
-              <ZoomImage src={current.full} zoom={zoom} onZoom={setZoom} />
+              <ZoomImage src={current.full} zoom={zoom} onZoom={setZoom} onFit={onFit} />
             )}
             {compare === 1 && (
               <div className="pointer-events-none absolute left-7 top-7 flex items-center gap-2">
@@ -505,8 +518,9 @@ export default function App() {
                 </button>
               </>
             )}
+            {zoom.on && <span className="tabular-nums text-zinc-400">{Math.round(zoom.scale * 100)}%</span>}
             <button
-              onClick={() => setZoom((z) => ({ ...z, on: !z.on }))}
+              onClick={toggleZoom}
               className={`rounded-lg px-3 py-1 ${zoom.on ? "bg-zinc-600 text-white" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"}`}
             >
               100% ({key("zoom")})
@@ -602,7 +616,7 @@ export default function App() {
         <span>{key("reject")} reject</span>
         <span>{key("clear")} clear</span>
         <span>Enter open / close</span>
-        <span>{key("zoom")} 100% zoom</span>
+        <span>{key("zoom")} 100% zoom · wheel / + - zoom</span>
         <span>{key("compare")} compare · 2 3 4 panes</span>
         <span>
           {key("burst")} compare burst · {key("keepBest")} keep best
